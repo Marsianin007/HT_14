@@ -28,8 +28,7 @@ class User(Person):
         sum_to_put = input("Введіть сумму, на яку хочете поповнити картку: ")
         if sum_to_put.isdigit():
             sum_to_put = int(sum_to_put)
-            try: self.balance = self.balance[0] + sum_to_put
-            except: self.balance = self.balance + sum_to_put
+            self.balance = self.balance + sum_to_put
             cur.execute('UPDATE users SET balance = ? WHERE username = ?', (self.balance, login))
             base.commit()
             print("Поповненя успішне")
@@ -40,20 +39,9 @@ class User(Person):
 
     def down_balance(self, login, password):
         sum_to_get = input("Введіть сумму, яку хочете перевести: ")
-        num_users_to_give_money = input("Введіть номер телефона користувача, кому хочете перевести кошти: ")
+        num_users_to_give_money = input("Введіть номер телефона користувача, якому хочете перевести кошти: ")
         if sum_to_get.isdigit():
             sum_to_get = int(sum_to_get)
-        try:
-            if sum_to_get <= self.balance[0]:
-                self.balance = self.balance[0] - sum_to_get
-                cur.execute('UPDATE users SET balance = ? WHERE username = ?', (self.balance, login))
-                base.commit()
-                print("Перевод успішний")
-                start_menu(login, password, self.balance)
-            else:
-                print("Недостатньо коштів")
-                self.down_balance(login, password)
-        except:
             if sum_to_get <= self.balance:
                 self.balance = self.balance - sum_to_get
                 cur.execute('UPDATE users SET balance = ? WHERE username = ?', (self.balance, login))
@@ -69,10 +57,7 @@ class User(Person):
             self.down_balance(login)
 
     def look_balance(self, login, password):
-        try:
-            print(self.balance[0])
-        except:
-            print(self.balance)
+        print(str(self.balance) + " uah")
         start_menu(login, password, self.balance)
 
 
@@ -153,6 +138,7 @@ def login_menu():
         entrance_flag = False
         pass_from_sql = cur.execute('SELECT password FROM users WHERE username == ?', (user_name,)).fetchone()
         balance = cur.execute('SELECT balance FROM users WHERE username == ?', (user_name,)).fetchone()
+        balance = balance[0]
         try:
             pass_from_sql = pass_from_sql[0]
         except TypeError:
@@ -179,7 +165,17 @@ def login_menu():
 class Curses(object):
 
     @staticmethod
+    def do_check(year_start, month_start, day_start, year_today, month_today, day_today):
+        if ((year_start < year_today - 4) or (month_start > 12 or month_start < 1) or (day_start > 31 or day_start < 1) or
+            (month_start == 2 and year_start % 4 == 0 and year_start % 400 != 0 and day_start > 29) or (month_start == 2 and year_start % 4 != 0 and day_start > 28) or
+            (month_start in [4, 6, 9, 11] and day_start > 30) or (year_start > year_today) or (year_start == year_today and month_start > month_today) or
+            (year_start == year_today and month_start == month_today and day_start > day_today)): return False
+        else:
+            return True
+
+    @staticmethod
     def convert_valute():
+        sum_uah = 0
         link_rate_now = "https://api.privatbank.ua/p24api/pubinfo?json&exchange&coursid=5"
         page = requests.get(link_rate_now)
         rate = page.json()
@@ -187,37 +183,34 @@ class Curses(object):
         valute = input("Введіть будь-ласка валюту, яку потрібно конвертувати: ")
         sum_to_convert = input("Введіть сумму у валюті, яку треба конвертувати: ")
         valute_end = input("Введіть будь-ласка валюту, у яку треба конвертувати: ")
-        if not sum_to_convert.isdigit():
-            sum_to_convert = 0
+        if sum_to_convert.isdigit():
+            check = False
+            print("Ваша сумма: {} {}\n".format(sum_to_convert, valute))
+            for i in rate:
+                if i['ccy'] == valute:
+                    sum_uah = float(i['sale']) * int(sum_to_convert)
+                    check = True
+            if valute == "BTC":
+                for i in rate:
+                    if i['ccy'] == "USD":
+                        sum_uah = sum_uah * float(i['sale'])
+
+            if check is not True:
+                print("Нажаль такої валюти немає")
+                return
+
+            if valute_end == "BTC":
+                for i in rate:
+                    if i['ccy'] == "USD":
+                        sum_uah = sum_uah / float(i['sale'])
+
+            for i in rate:
+                if i['ccy'] == valute_end:
+                    res = sum_uah / float(i['sale'])
+                    print(sum_to_convert + " " + valute + " = " + str(float(res)) + " " + valute_end)
+        else:
             print("Введіть коретну сумму")
             Curses.convert_valute()
-
-
-        check = False
-        print("Ваша сумма: {} {}\n".format(sum_to_convert, valute))
-        #global sum_uah
-        for i in rate:
-            if i['ccy'] == valute:
-                sum_uah = float(i['sale']) * int(sum_to_convert)
-                check = True
-        if valute == "BTC":
-            for i in rate:
-                if i['ccy'] == "USD":
-                    sum_uah = sum_uah * float(i['sale'])
-
-        if check is not True:
-            print("Нажаль такої валюти немає")
-            return
-
-        if valute_end == "BTC":
-            for i in rate:
-                if i['ccy'] == "USD":
-                    sum_uah = sum_uah / float(i['sale'])
-
-        for i in rate:
-            if i['ccy'] == valute_end:
-                res = sum_uah / float(i['sale'])
-                print(sum_to_convert + " " + valute + " = " + str(float(res)) + " " + valute_end)
 
     @staticmethod
     def rate_today():
@@ -240,133 +233,111 @@ class Curses(object):
 
     @staticmethod
     def print_rate(year_start=0, month_start=0, day_start=0):
+        date = input("Ваша дата у форматі yyyy-mm-dd: ")
         now = datetime.datetime.now()
         year_today = int(now.year)
         month_today = int(now.month)
         day_today = int(now.day)
-        if year_start == 0:
-            year_start, month_start, day_start = Curses.check_date()
-        old_buy, old_sale = 0, 0
-        my_list = Curses.create_list_of_dates(day_start, month_start, year_start, day_today, month_today, year_today)
         try:
-            i = my_list[0]
-        except:
-            return
-
-        i = i[2] + "." + i[1] + "." + i[0]
-        print(i)
-        link_rate = "https://api.privatbank.ua/p24api/exchange_rates?json&date={}".format(i)
-        page = requests.get(link_rate)
-        rate = page.json()
-        rate = rate["exchangeRate"]
-        str_of_valutes = ""
-        for i in rate:
+            if year_start == 0:
+                year_start, month_start, day_start = Curses.check_date(date)
+            old_buy, old_sale = 0, 0
+            my_list = Curses.create_list_of_dates(day_start, month_start, year_start, day_today, month_today, year_today)
             try:
-                str_of_valutes += str(i["currency"])
-                str_of_valutes += " "
+                i = my_list[0]
             except:
-                pass
-        print(str_of_valutes)
-        valute = input("Введіть потрібну валюту: ")
-        today_check = False
-        try:
-            for i in my_list:
-                i = i[2] + "." + i[1] + "." + i[0]
-                link_rate = "https://api.privatbank.ua/p24api/exchange_rates?json&date={}".format(i)
-                page = requests.get(link_rate)
-                rate = page.json()
-                check = False
-                for r in rate["exchangeRate"]:
-                    if 'currency' in r.keys() and r['currency'] == valute:
-                        if old_buy != 0 and old_sale != 0:
-                            difference_buy = old_buy - r['purchaseRateNB']
-                            difference_sale = old_sale - r['saleRateNB']
-                            print(i)
-                            print("Купівля: " + str(r['purchaseRateNB']) + "    " + str(difference_buy))
-                            print("Продаж: " + str(r['saleRateNB']) + "    " + str(difference_sale))
-                            old_buy = r['purchaseRateNB']
-                            old_sale = r['saleRateNB']
-                        else:
-                            print(i)
-                            print("Купівля: " + str(r['purchaseRateNB']))
-                            print("Продаж: " + str(r['saleRateNB']))
-                            old_buy = r['purchaseRateNB']
-                            old_sale = r['saleRateNB']
-                        check = True
+                return
 
-                if check is not True:
-                    print("Нажаль такої валюти немає, зачекайте 10 секунд\n")
-
-                    Curses.print_rate(year_start, month_start, day_start)
-
-            link_rate_now = "https://api.privatbank.ua/p24api/pubinfo?json&exchange&coursid=5"
-            page = requests.get(link_rate_now)
+            i = i[2] + "." + i[1] + "." + i[0]
+            print(i)
+            link_rate = "https://api.privatbank.ua/p24api/exchange_rates?json&date={}".format(i)
+            page = requests.get(link_rate)
             rate = page.json()
+            rate = rate["exchangeRate"]
+            str_of_valutes = ""
             for i in rate:
-                if i['ccy'] == valute:
-                    difference_buy = old_buy - float(i['buy'])
-                    difference_sale = old_sale - float(i['sale'])
-                    print("Сьгодні")
-                    print("Купівля: " + str(i['buy']) + "   " + str(difference_buy))
-                    print("Продаж: " + str(i['sale']) + "   " + str(difference_sale))
-                    today_check = True
+                try:
+                    str_of_valutes += str(i["currency"])
+                    str_of_valutes += " "
+                except:
+                    pass
+            print(str_of_valutes)
+            valute = input("Введіть потрібну валюту: ")
+            today_check = False
+            try:
+                for i in my_list:
+                    i = i[2] + "." + i[1] + "." + i[0]
+                    link_rate = "https://api.privatbank.ua/p24api/exchange_rates?json&date={}".format(i)
+                    page = requests.get(link_rate)
+                    rate = page.json()
+                    check = False
+                    for r in rate["exchangeRate"]:
+                        if 'currency' in r.keys() and r['currency'] == valute:
+                            if old_buy != 0 and old_sale != 0:
+                                difference_buy = old_buy - r['purchaseRateNB']
+                                difference_sale = old_sale - r['saleRateNB']
+                                print(i)
+                                print("Купівля: " + str(r['purchaseRateNB']) + "    " + str(difference_buy))
+                                print("Продаж: " + str(r['saleRateNB']) + "    " + str(difference_sale))
+                                old_buy = r['purchaseRateNB']
+                                old_sale = r['saleRateNB']
+                            else:
+                                print(i)
+                                print("Купівля: " + str(r['purchaseRateNB']))
+                                print("Продаж: " + str(r['saleRateNB']))
+                                old_buy = r['purchaseRateNB']
+                                old_sale = r['saleRateNB']
+                            check = True
 
-            if 'ccy' not in rate.keys():
-                print("Сталася помилка, курсу цієї валюти на цю дату немає")
+                    if check is not True:
+                        print("Нажаль такої валюти немає, зачекайте 10 секунд\n")
+
+                        Curses.print_rate(year_start, month_start, day_start)
+
+                link_rate_now = "https://api.privatbank.ua/p24api/pubinfo?json&exchange&coursid=5"
+                page = requests.get(link_rate_now)
+                rate = page.json()
+                for i in rate:
+                    if i['ccy'] == valute:
+                        difference_buy = old_buy - float(i['buy'])
+                        difference_sale = old_sale - float(i['sale'])
+                        print("Сьгодні")
+                        print("Купівля: " + str(i['buy']) + "   " + str(difference_buy))
+                        print("Продаж: " + str(i['sale']) + "   " + str(difference_sale))
+                        today_check = True
+
+                if 'ccy' not in rate.keys():
+                    print("Сталася помилка, курсу цієї валюти на цю дату немає")
+            except:
+                if today_check:
+                    pass
+                else:
+                    print("Якщо ви бажаєте подивитися курс на сьогодні, перейдіть у відповідний пункт меню")
         except:
-            if today_check:
-                pass
-            else:
-                print("Якщо ви бажаєте подивитися курс на сьогодні, перейдіть у відповідний пункт меню")
+            Curses.print_rate()
 
     @staticmethod
-    def check_date():
-        global date
+    def check_date(date):
         date_now = datetime.date.today()
         year_today = int(str(date_now)[0:4])
         month_today = int(str(date_now)[5:7])
         day_today = int(str(date_now)[8:10])
-        date = input("Ваша дата у форматі yyyy-mm-dd: ")
-        if not date[0:4].isdigit() or not date[5:7].isdigit() or not date[8:10].isdigit():
-            print("Невірна дата \n")
-            Curses.check_date()
-        if len(date) > 10:
-            print("Невірна дата \n")
-            Curses.check_date()
-        year_start = int(str(date)[0:4])
-        month_start = int(str(date)[5:7])
-        day_start = int(str(date)[8:10])
-        if year_start < year_today - 4:
-            print("В цьому році неможливо знайти курс\n")
-            Curses.check_date()
-        if month_start > 12 or month_start < 1:
-            print("Такого місяці не існує\n")
-            Curses.check_date()
-        if day_start > 31 or day_start < 1:
-            print("У місяці не існує такого дня\n")
-            Curses.check_date()
-        if month_start == 2 and year_start % 4 == 0 and year_start % 400 != 0 and day_start > 29:
-            print("В цьому році у лютому 29 днів\n")
-            Curses.check_date()
-        if month_start == 2 and year_start % 4 != 0 and day_start > 28:
-            print("В цьому році у лютому 28 днів\n")
-            Curses.check_date()
-        if month_start in [4, 6, 9, 11] and day_start > 30:
-            print("Некоректна дата, у цьомі місяці лише 30 днів\n")
-            Curses.check_date()
-        if year_start > year_today:
-            print("Нажаль ми не навчилися знаходити курс у майбутньому\n")
-            Curses.check_date()
-        if year_start == year_today and month_start > month_today:
-            print("Нажаль ми не навчилися знаходити курс у майбутньому\n")
-            Curses.check_date()
-        if year_start == year_today and month_start == month_today and day_start > day_today:
-            print("Нажаль ми не навчилися знаходити курс у майбутньому\n")
-            Curses.check_date()
-        if year_start == year_today and month_start == month_today and day_start == day_today:
-            print("Щоб переглянути курс сьогодні, перейдіть у відповідне меню:")
 
-        return (year_start, month_start, day_start)
+        if not date[0:4].isdigit() or not date[5:7].isdigit() or not date[8:10].isdigit() or len(date) > 10:
+            print("Невірна дата")
+            Curses.print_rate()
+        else:
+            year_start = int(str(date)[0:4])
+            month_start = int(str(date)[5:7])
+            day_start = int(str(date)[8:10])
+            if Curses.do_check(year_start, month_start, day_start, year_today, month_today, day_today):
+                if year_start == year_today and month_start == month_today and day_start == day_today:
+                    print("Щоб переглянути курс сьогодні, перейдіть у відповідне меню:")
+
+                return (year_start, month_start, day_start)
+            else:
+                print("Помилка, невірні данні")
+                Curses.check_date(date)
 
     @staticmethod
     def create_list_of_dates(day_start, month_start, year_start, day_today, month_today, year_today):
@@ -457,6 +428,7 @@ class Give_nominals(object):
 
     @staticmethod
     def get_money(user_name, password, user_balance):
+        user_balance = user_balance[0]
         print("Введіть сумму кратну '10', яку потрібно зняти\n Мінімальна сумма 10")
         sum_to_get = input("Ваша сумма: ")
         if sum_to_get.isdigit() is False:
@@ -467,14 +439,10 @@ class Give_nominals(object):
             print("Введіть коректну сумму:\n")
             Give_nominals.get_money(user_name, password, user_balance)
         sum_to_get_copy = sum_to_get
-        try:
-            if sum_to_get > int(user_balance):
-                print("Недостятньо коштів...")
-                start_menu(user_name, password, user_balance)
-        except:
-            if sum_to_get > int(user_balance[0]):
-                print("Недостятньо коштів...")
-                start_menu(user_name, password, user_balance)
+        if sum_to_get > int(user_balance):
+            print("Недостятньо коштів...")
+            start_menu(user_name, password, user_balance)
+
 
         Give_nominals.banknotes_to_get(sum_to_get, user_name, sum_to_get_copy, user_balance, password)
 
@@ -535,8 +503,7 @@ class Give_nominals(object):
         if sum_to_get != 0:
             Give_nominals.greedy_method(copy_sum_to_get, user_name, sum_to_get_copy, user_balance, password)
         else:
-            try: new_balance = user_balance - copy_sum_to_get
-            except: new_balance = user_balance[0] - copy_sum_to_get
+            new_balance = user_balance - copy_sum_to_get
             cur.execute('UPDATE users SET balance == ? WHERE username == ?', (new_balance, user_name))
             banknotes_list = []
             cur.execute('DELETE  FROM banknotes')
@@ -663,7 +630,7 @@ class Give_nominals(object):
 
 def start_menu(login, password, balance=0):
     balance = cur.execute('SELECT balance FROM users WHERE username == ?', (login,)).fetchone()
-    user = User(login, password, balance)
+    user = User(login, password, balance[0])
     print("")
     print("Введіть дію:\n1. Продивитись баланс\n2. Поповнити баланс\n3. Перевести кошти\n4. Подивитися курс сьогодні\n5. Порівняти курс\n6. Конвертувати\n7. Зняти кошти "
           "\n8. Вихід")
