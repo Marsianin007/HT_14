@@ -1,5 +1,4 @@
 import sqlite3
-import time
 import datetime
 import requests
 base = sqlite3.connect("base.db")
@@ -40,7 +39,8 @@ class User(Person):
             self.up_balance(login, password)
 
     def down_balance(self, login, password):
-        sum_to_get = input("Введіть сумму, яку хочете зняти: ")
+        sum_to_get = input("Введіть сумму, яку хочете перевести: ")
+        num_users_to_give_money = input("Введіть номер телефона користувача, кому хочете перевести кошти: ")
         if sum_to_get.isdigit():
             sum_to_get = int(sum_to_get)
         try:
@@ -101,10 +101,10 @@ class Incasator(Person):
             quantity = int(quantity)
             if quantity < 0:
                 print("Неправильна кількість:")
-                change_quantity()
+                Incasator.set_valutes()
         else:
             print("Введіть будь-ласка число!")
-            change_quantity()
+            Incasator.set_valutes()
 
         if nominal not in banknotes_list:
             print(nominal)
@@ -179,6 +179,47 @@ def login_menu():
 class Curses(object):
 
     @staticmethod
+    def convert_valute():
+        link_rate_now = "https://api.privatbank.ua/p24api/pubinfo?json&exchange&coursid=5"
+        page = requests.get(link_rate_now)
+        rate = page.json()
+        print("Список валют: USD, EUR, RUR, BTC на сьогодні\n")
+        valute = input("Введіть будь-ласка валюту, яку потрібно конвертувати: ")
+        sum_to_convert = input("Введіть сумму у валюті, яку треба конвертувати: ")
+        valute_end = input("Введіть будь-ласка валюту, у яку треба конвертувати: ")
+        if not sum_to_convert.isdigit():
+            sum_to_convert = 0
+            print("Введіть коретну сумму")
+            Curses.convert_valute()
+
+
+        check = False
+        print("Ваша сумма: {} {}\n".format(sum_to_convert, valute))
+        #global sum_uah
+        for i in rate:
+            if i['ccy'] == valute:
+                sum_uah = float(i['sale']) * int(sum_to_convert)
+                check = True
+        if valute == "BTC":
+            for i in rate:
+                if i['ccy'] == "USD":
+                    sum_uah = sum_uah * float(i['sale'])
+
+        if check is not True:
+            print("Нажаль такої валюти немає")
+            return
+
+        if valute_end == "BTC":
+            for i in rate:
+                if i['ccy'] == "USD":
+                    sum_uah = sum_uah / float(i['sale'])
+
+        for i in rate:
+            if i['ccy'] == valute_end:
+                res = sum_uah / float(i['sale'])
+                print(sum_to_convert + " " + valute + " = " + str(float(res)) + " " + valute_end)
+
+    @staticmethod
     def rate_today():
         link_rate_now = "https://api.privatbank.ua/p24api/pubinfo?json&exchange&coursid=5"
         page = requests.get(link_rate_now)
@@ -195,14 +236,14 @@ class Curses(object):
 
         if check is not True:
             print("Нажаль такої валюти немає")
-            rate_today()
+            Curses.rate_today()
 
     @staticmethod
     def print_rate(year_start=0, month_start=0, day_start=0):
-        date_now = datetime.date.today()
-        year_today = int(str(date_now)[0:4])
-        month_today = int(str(date_now)[5:7])
-        day_today = int(str(date_now)[8:10])
+        now = datetime.datetime.now()
+        year_today = int(now.year)
+        month_today = int(now.month)
+        day_today = int(now.day)
         if year_start == 0:
             year_start, month_start, day_start = Curses.check_date()
         old_buy, old_sale = 0, 0
@@ -212,7 +253,8 @@ class Curses(object):
         except:
             return
 
-        i = i[8:10] + "." + i[5:7] + "." + i[0:4]
+        i = i[2] + "." + i[1] + "." + i[0]
+        print(i)
         link_rate = "https://api.privatbank.ua/p24api/exchange_rates?json&date={}".format(i)
         page = requests.get(link_rate)
         rate = page.json()
@@ -229,7 +271,7 @@ class Curses(object):
         today_check = False
         try:
             for i in my_list:
-                i = i[8:10] + "." + i[5:7] + "." + i[0:4]
+                i = i[2] + "." + i[1] + "." + i[0]
                 link_rate = "https://api.privatbank.ua/p24api/exchange_rates?json&date={}".format(i)
                 page = requests.get(link_rate)
                 rate = page.json()
@@ -255,7 +297,7 @@ class Curses(object):
                 if check is not True:
                     print("Нажаль такої валюти немає, зачекайте 10 секунд\n")
 
-                    print_rate(year_start, month_start, day_start)
+                    Curses.print_rate(year_start, month_start, day_start)
 
             link_rate_now = "https://api.privatbank.ua/p24api/pubinfo?json&exchange&coursid=5"
             page = requests.get(link_rate_now)
@@ -271,7 +313,6 @@ class Curses(object):
 
             if 'ccy' not in rate.keys():
                 print("Сталася помилка, курсу цієї валюти на цю дату немає")
-                # print_rate()
         except:
             if today_check:
                 pass
@@ -288,40 +329,40 @@ class Curses(object):
         date = input("Ваша дата у форматі yyyy-mm-dd: ")
         if not date[0:4].isdigit() or not date[5:7].isdigit() or not date[8:10].isdigit():
             print("Невірна дата \n")
-            check_date()
+            Curses.check_date()
         if len(date) > 10:
             print("Невірна дата \n")
-            check_date()
+            Curses.check_date()
         year_start = int(str(date)[0:4])
         month_start = int(str(date)[5:7])
         day_start = int(str(date)[8:10])
         if year_start < year_today - 4:
             print("В цьому році неможливо знайти курс\n")
-            check_date()
+            Curses.check_date()
         if month_start > 12 or month_start < 1:
             print("Такого місяці не існує\n")
-            check_date()
+            Curses.check_date()
         if day_start > 31 or day_start < 1:
             print("У місяці не існує такого дня\n")
-            check_date()
+            Curses.check_date()
         if month_start == 2 and year_start % 4 == 0 and year_start % 400 != 0 and day_start > 29:
             print("В цьому році у лютому 29 днів\n")
-            check_date()
+            Curses.check_date()
         if month_start == 2 and year_start % 4 != 0 and day_start > 28:
             print("В цьому році у лютому 28 днів\n")
-            check_date()
+            Curses.check_date()
         if month_start in [4, 6, 9, 11] and day_start > 30:
             print("Некоректна дата, у цьомі місяці лише 30 днів\n")
-            check_date()
+            Curses.check_date()
         if year_start > year_today:
             print("Нажаль ми не навчилися знаходити курс у майбутньому\n")
-            check_date()
+            Curses.check_date()
         if year_start == year_today and month_start > month_today:
             print("Нажаль ми не навчилися знаходити курс у майбутньому\n")
-            check_date()
+            Curses.check_date()
         if year_start == year_today and month_start == month_today and day_start > day_today:
             print("Нажаль ми не навчилися знаходити курс у майбутньому\n")
-            check_date()
+            Curses.check_date()
         if year_start == year_today and month_start == month_today and day_start == day_today:
             print("Щоб переглянути курс сьогодні, перейдіть у відповідне меню:")
 
@@ -337,7 +378,14 @@ class Curses(object):
                     check_month = True
                 if month_start in [1, 3, 5, 7, 8, 10, 12]:  # дней в месяце 31
                     while day_start <= 31:
-                        tmp = str(year_start) + "-" + str(month_start) + "-" + str(day_start)
+                        if month_start < 10: month_start_str = "0" + str(month_start)
+                        else: month_start_str = str(month_start)
+                        if day_start < 10: day_start_str = "0" + str(day_start)
+                        else: day_start_str = str(day_start)
+                        tmp = []
+                        tmp.append(str(year_start))
+                        tmp.append(month_start_str)
+                        tmp.append(day_start_str)
                         list.append(tmp)
                         day_start += 1
                         if check_month and day_start == day_today:
@@ -348,7 +396,14 @@ class Curses(object):
 
                 if month_start == 2 and year_start % 4 == 0 and year_start % 400 != 0:  # высокосный год, дней в месяце 29
                     while day_start <= 29:
-                        tmp = str(year_start) + "-" + str(month_start) + "-" + str(day_start)
+                        if month_start < 10: month_start_str = "0" + str(month_start)
+                        else: month_start_str = str(month_start)
+                        if day_start < 10: day_start_str = "0" + str(day_start)
+                        else: day_start_str = str(day_start)
+                        tmp = []
+                        tmp.append(str(year_start))
+                        tmp.append(month_start_str)
+                        tmp.append(day_start_str)
                         list.append(tmp)
                         day_start += 1
                         if check_month and day_start == day_today:
@@ -359,7 +414,14 @@ class Curses(object):
 
                 if month_start == 2 and year_start % 4 != 0:  # обычный год, дней в месяец 28
                     while day_start <= 28:
-                        tmp = str(year_start) + "-" + str(month_start) + "-" + str(day_start)
+                        if month_start < 10: month_start_str = "0" + str(month_start)
+                        else: month_start_str = str(month_start)
+                        if day_start < 10: day_start_str = "0" + str(day_start)
+                        else: day_start_str = str(day_start)
+                        tmp = []
+                        tmp.append(str(year_start))
+                        tmp.append(month_start_str)
+                        tmp.append(day_start_str)
                         list.append(tmp)
                         day_start += 1
                         if check_month and day_start == day_today:
@@ -371,7 +433,14 @@ class Curses(object):
 
                 if month_start in [4, 6, 9, 11]:  # дней в месяце 30
                     while day_start <= 30:
-                        tmp = str(year_start) + "-" + str(month_start) + "-" + str(day_start)
+                        if month_start < 10: month_start_str = "0" + str(month_start)
+                        else: month_start_str = str(month_start)
+                        if day_start < 10: day_start_str = "0" + str(day_start)
+                        else: day_start_str = str(day_start)
+                        tmp = []
+                        tmp.append(str(year_start))
+                        tmp.append(month_start_str)
+                        tmp.append(day_start_str)
                         list.append(tmp)
                         day_start += 1
                         if check_month and day_start == day_today:
@@ -464,7 +533,7 @@ class Give_nominals(object):
         sum_to_get, uah_10 = Give_nominals.exit_from_func(sum_to_get, 10, uah_10)
 
         if sum_to_get != 0:
-            Give_nominals.greedy_method(copy_sum_to_get, user_name, sum_to_get_copy, user_balance)
+            Give_nominals.greedy_method(copy_sum_to_get, user_name, sum_to_get_copy, user_balance, password)
         else:
             try: new_balance = user_balance - copy_sum_to_get
             except: new_balance = user_balance[0] - copy_sum_to_get
@@ -510,7 +579,7 @@ class Give_nominals(object):
             return sum_to_get, variable
 
     @staticmethod
-    def greedy_method(sum_to_get, user_name, sum_to_get_copy, user_balance):
+    def greedy_method(sum_to_get, user_name, sum_to_get_copy, user_balance, password):
         list = [1000, 500, 200, 100, 50, 20, 10]
         banknotes_dict = {}
         tmp = cur.execute('SELECT * FROM banknotes')
@@ -615,7 +684,7 @@ def start_menu(login, password, balance=0):
             Curses.print_rate()
             start_menu(login, password, balance)
         if number_from_user == 6:
-            convert_valute()
+            Curses.convert_valute()
             start_menu(login, password, balance)
         if number_from_user == 7:
             Give_nominals.get_money(login, password, balance)
