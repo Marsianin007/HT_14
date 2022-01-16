@@ -1,12 +1,13 @@
 import sqlite3
 import datetime
 import requests
+
 base = sqlite3.connect("base.db")
 cur = base.cursor()
+
 base.execute('CREATE TABLE IF NOT EXISTS users(username text PRIMARY KEY, password text, balance INT)')
 base.execute('CREATE TABLE IF NOT EXISTS banknotes(nominal INT PRIMARY KEY, quantity INT)')
 base.commit()
-global str_name_transactions
 
 
 class Person(object):
@@ -54,7 +55,7 @@ class User(Person):
 
         else:
             print("Введіть будь-ласка додатнє число")
-            self.down_balance(login)
+            self.down_balance(login, password)
 
     def look_balance(self, login, password):
         print(str(self.balance) + " uah")
@@ -108,7 +109,7 @@ class Incasator(Person):
 
 
 class EntranceMenu(object):
-    def __init__(self, login = "None", password = "None"):
+    def __init__(self, login="None", password="None"):
         self.login = login
         self.password = password
 
@@ -138,8 +139,8 @@ def login_menu():
         entrance_flag = False
         pass_from_sql = cur.execute('SELECT password FROM users WHERE username == ?', (user_name,)).fetchone()
         balance = cur.execute('SELECT balance FROM users WHERE username == ?', (user_name,)).fetchone()
-        balance = balance[0]
         try:
+            balance = balance[0]
             pass_from_sql = pass_from_sql[0]
         except TypeError:
             pass
@@ -163,16 +164,6 @@ def login_menu():
 
 
 class Curses(object):
-
-    @staticmethod
-    def do_check(year_start, month_start, day_start, year_today, month_today, day_today):
-        if ((year_start < year_today - 4) or (month_start > 12 or month_start < 1) or (day_start > 31 or day_start < 1) or
-            (month_start == 2 and year_start % 4 == 0 and year_start % 400 != 0 and day_start > 29) or (month_start == 2 and year_start % 4 != 0 and day_start > 28) or
-            (month_start in [4, 6, 9, 11] and day_start > 30) or (year_start > year_today) or (year_start == year_today and month_start > month_today) or
-            (year_start == year_today and month_start == month_today and day_start > day_today)): return False
-        else:
-            return True
-
     @staticmethod
     def convert_valute():
         sum_uah = 0
@@ -233,195 +224,83 @@ class Curses(object):
 
     @staticmethod
     def print_rate(year_start=0, month_start=0, day_start=0):
+        check_valute = False
+        first_print = False
         date = input("Ваша дата у форматі yyyy-mm-dd: ")
-        now = datetime.datetime.now()
-        year_today = int(now.year)
-        month_today = int(now.month)
-        day_today = int(now.day)
+        correct_date = None
+        date_datetime_format = None
         try:
-            if year_start == 0:
-                year_start, month_start, day_start = Curses.check_date(date)
-            old_buy, old_sale = 0, 0
-            my_list = Curses.create_list_of_dates(day_start, month_start, year_start, day_today, month_today, year_today)
-            try:
-                i = my_list[0]
-            except:
-                return
-
-            i = i[2] + "." + i[1] + "." + i[0]
-            print(i)
-            link_rate = "https://api.privatbank.ua/p24api/exchange_rates?json&date={}".format(i)
-            page = requests.get(link_rate)
-            rate = page.json()
-            rate = rate["exchangeRate"]
-            str_of_valutes = ""
-            for i in rate:
-                try:
-                    str_of_valutes += str(i["currency"])
-                    str_of_valutes += " "
-                except:
-                    pass
-            print(str_of_valutes)
-            valute = input("Введіть потрібну валюту: ")
-            today_check = False
-            try:
-                for i in my_list:
-                    i = i[2] + "." + i[1] + "." + i[0]
-                    link_rate = "https://api.privatbank.ua/p24api/exchange_rates?json&date={}".format(i)
-                    page = requests.get(link_rate)
-                    rate = page.json()
-                    check = False
-                    for r in rate["exchangeRate"]:
-                        if 'currency' in r.keys() and r['currency'] == valute:
-                            if old_buy != 0 and old_sale != 0:
-                                difference_buy = old_buy - r['purchaseRateNB']
-                                difference_sale = old_sale - r['saleRateNB']
-                                print(i)
-                                print("Купівля: " + str(r['purchaseRateNB']) + "    " + str(difference_buy))
-                                print("Продаж: " + str(r['saleRateNB']) + "    " + str(difference_sale))
-                                old_buy = r['purchaseRateNB']
-                                old_sale = r['saleRateNB']
-                            else:
-                                print(i)
-                                print("Купівля: " + str(r['purchaseRateNB']))
-                                print("Продаж: " + str(r['saleRateNB']))
-                                old_buy = r['purchaseRateNB']
-                                old_sale = r['saleRateNB']
-                            check = True
-
-                    if check is not True:
-                        print("Нажаль такої валюти немає, зачекайте 10 секунд\n")
-
-                        Curses.print_rate(year_start, month_start, day_start)
-
-                link_rate_now = "https://api.privatbank.ua/p24api/pubinfo?json&exchange&coursid=5"
-                page = requests.get(link_rate_now)
-                rate = page.json()
-                for i in rate:
-                    if i['ccy'] == valute:
-                        difference_buy = old_buy - float(i['buy'])
-                        difference_sale = old_sale - float(i['sale'])
-                        print("Сьгодні")
-                        print("Купівля: " + str(i['buy']) + "   " + str(difference_buy))
-                        print("Продаж: " + str(i['sale']) + "   " + str(difference_sale))
-                        today_check = True
-
-                if 'ccy' not in rate.keys():
-                    print("Сталася помилка, курсу цієї валюти на цю дату немає")
-            except:
-                if today_check:
-                    pass
-                else:
-                    print("Якщо ви бажаєте подивитися курс на сьогодні, перейдіть у відповідний пункт меню")
+            date_datetime_format = datetime.datetime.strptime(date, "%Y-%m-%d")
+            day_start = date_datetime_format.day
+            month_start = date_datetime_format.month
+            year_start = date_datetime_format.year
+            correct_date = True
         except:
-            Curses.print_rate()
-
-    @staticmethod
-    def check_date(date):
-        date_now = datetime.date.today()
-        year_today = int(str(date_now)[0:4])
-        month_today = int(str(date_now)[5:7])
-        day_today = int(str(date_now)[8:10])
-
-        if not date[0:4].isdigit() or not date[5:7].isdigit() or not date[8:10].isdigit() or len(date) > 10:
             print("Невірна дата")
             Curses.print_rate()
-        else:
-            year_start = int(str(date)[0:4])
-            month_start = int(str(date)[5:7])
-            day_start = int(str(date)[8:10])
-            if Curses.do_check(year_start, month_start, day_start, year_today, month_today, day_today):
-                if year_start == year_today and month_start == month_today and day_start == day_today:
-                    print("Щоб переглянути курс сьогодні, перейдіть у відповідне меню:")
 
-                return (year_start, month_start, day_start)
+        if correct_date is True:
+            if date_datetime_format.strftime("%Y%m%d") <= datetime.datetime.now().strftime("%Y%m%d"):
+                old_buy, old_sale = 0, 0
+                date_to_link = str(day_start) + "." + str(month_start) + "." + str(year_start)
+                link_rate = "https://api.privatbank.ua/p24api/exchange_rates?json&date={}".format(date_to_link)
+                page = requests.get(link_rate)
+                rate = page.json()
+                rate = rate["exchangeRate"]
+                str_of_valutes = ""
+                for i in rate:
+                    try:
+                        str_of_valutes += str(i["currency"])
+                        str_of_valutes += " "
+                    except:
+                        pass
+                print(str_of_valutes)
+                valute = input("Введіть потрібну валюту: ")
+
+                date_to_format = str(date_datetime_format.day) + "." + str(date_datetime_format.month) + "." + str(date_datetime_format.year)
+                link_rate = "https://api.privatbank.ua/p24api/exchange_rates?json&date={}".format(date_to_format)
+                page = requests.get(link_rate)
+                rate = page.json()
+                for r in rate["exchangeRate"]:
+                    if 'currency' in r.keys() and r['currency'] == valute:
+                        check_valute = True
+
+                if check_valute is True:
+                    while date_datetime_format.strftime("%Y%m%d") != datetime.datetime.now().strftime("%Y%m%d"):
+                        if first_print is True:
+                            date_datetime_format += datetime.timedelta(days=1)
+                        date_to_format = str(date_datetime_format.day) + "." + str(date_datetime_format.month) + "." + str(date_datetime_format.year)
+                        first_print = True
+                        link_rate = "https://api.privatbank.ua/p24api/exchange_rates?json&date={}".format(date_to_format)
+                        page = requests.get(link_rate)
+                        rate = page.json()
+                        for r in rate["exchangeRate"]:
+                            if 'currency' in r.keys() and r['currency'] == valute:
+                                if old_buy != 0 and old_sale != 0:
+                                    difference_buy = old_buy - r['purchaseRateNB']
+                                    difference_sale = old_sale - r['saleRateNB']
+                                    print(date_to_format)
+                                    print("Купівля: " + str(r['purchaseRateNB']) + "    " + str(difference_buy))
+                                    print("Продаж: " + str(r['saleRateNB']) + "    " + str(difference_sale))
+                                    old_buy = r['purchaseRateNB']
+                                    old_sale = r['saleRateNB']
+                                else:
+                                    print(date_to_format)
+                                    print("Купівля: " + str(r['purchaseRateNB']))
+                                    print("Продаж: " + str(r['saleRateNB']))
+                                    old_buy = r['purchaseRateNB']
+                                    old_sale = r['saleRateNB']
+
+                        if check_valute is not True:
+                            print("Нажаль такої валюти немає\n")
+                            Curses.print_rate(year_start, month_start, day_start)
+
+                else:
+                    print("Такої валюти немає")
+                    Curses.print_rate()
             else:
-                print("Помилка, невірні данні")
-                Curses.check_date(date)
-
-    @staticmethod
-    def create_list_of_dates(day_start, month_start, year_start, day_today, month_today, year_today):
-        list = []
-        check_month = False
-        while year_start <= year_today:
-            while month_start <= 12:
-                if month_start == month_today and year_start == year_today:
-                    check_month = True
-                if month_start in [1, 3, 5, 7, 8, 10, 12]:  # дней в месяце 31
-                    while day_start <= 31:
-                        if month_start < 10: month_start_str = "0" + str(month_start)
-                        else: month_start_str = str(month_start)
-                        if day_start < 10: day_start_str = "0" + str(day_start)
-                        else: day_start_str = str(day_start)
-                        tmp = []
-                        tmp.append(str(year_start))
-                        tmp.append(month_start_str)
-                        tmp.append(day_start_str)
-                        list.append(tmp)
-                        day_start += 1
-                        if check_month and day_start == day_today:
-                            return list
-                        if day_start > 31:
-                            month_start += 1
-                    day_start = 1
-
-                if month_start == 2 and year_start % 4 == 0 and year_start % 400 != 0:  # высокосный год, дней в месяце 29
-                    while day_start <= 29:
-                        if month_start < 10: month_start_str = "0" + str(month_start)
-                        else: month_start_str = str(month_start)
-                        if day_start < 10: day_start_str = "0" + str(day_start)
-                        else: day_start_str = str(day_start)
-                        tmp = []
-                        tmp.append(str(year_start))
-                        tmp.append(month_start_str)
-                        tmp.append(day_start_str)
-                        list.append(tmp)
-                        day_start += 1
-                        if check_month and day_start == day_today:
-                            return list
-                        if day_start > 29:
-                            month_start += 1
-                    day_start = 1
-
-                if month_start == 2 and year_start % 4 != 0:  # обычный год, дней в месяец 28
-                    while day_start <= 28:
-                        if month_start < 10: month_start_str = "0" + str(month_start)
-                        else: month_start_str = str(month_start)
-                        if day_start < 10: day_start_str = "0" + str(day_start)
-                        else: day_start_str = str(day_start)
-                        tmp = []
-                        tmp.append(str(year_start))
-                        tmp.append(month_start_str)
-                        tmp.append(day_start_str)
-                        list.append(tmp)
-                        day_start += 1
-                        if check_month and day_start == day_today:
-                            return list
-                        if day_start > 28:
-                            month_start += 1
-
-                    day_start = 1
-
-                if month_start in [4, 6, 9, 11]:  # дней в месяце 30
-                    while day_start <= 30:
-                        if month_start < 10: month_start_str = "0" + str(month_start)
-                        else: month_start_str = str(month_start)
-                        if day_start < 10: day_start_str = "0" + str(day_start)
-                        else: day_start_str = str(day_start)
-                        tmp = []
-                        tmp.append(str(year_start))
-                        tmp.append(month_start_str)
-                        tmp.append(day_start_str)
-                        list.append(tmp)
-                        day_start += 1
-                        if check_month and day_start == day_today:
-                            return list
-                        if day_start > 30:
-                            month_start += 1
-                    day_start = 1
-
-            month_start = 1
-            year_start += 1
+                print("Дата з майбутнього")
+                Curses.print_rate()
 
 
 class Give_nominals(object):
@@ -442,7 +321,6 @@ class Give_nominals(object):
         if sum_to_get > int(user_balance):
             print("Недостятньо коштів...")
             start_menu(user_name, password, user_balance)
-
 
         Give_nominals.banknotes_to_get(sum_to_get, user_name, sum_to_get_copy, user_balance, password)
 
@@ -668,3 +546,4 @@ def start_menu(login, password, balance=0):
 
 x = Person("Vlad", 1111)
 login_menu()
+
